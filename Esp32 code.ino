@@ -29,7 +29,7 @@ const int workrate = 10;       // Work rate threshold
 const int longFlickRate = 50;  // Long flicker rate threshold
 const int brightthresh = 700;  // Brightness threshold
 const int offthresh = 1200;    // Off threshold
-const int powerthresh = 1000;  // Power threshold
+const int powerthresh = 1100;  // Power threshold
 
 // Variables for detection
 long currentmilli = 0, prevmilli = 0;
@@ -106,9 +106,9 @@ void loop() {
         if (currentglow > maxGlow) maxGlow = currentglow;
         if (currentglow < minGlow) minGlow = currentglow;
 
-
+        Serial.println(maxGlow - minGlow);
         // Check for low-frequency flicker
-        if ((maxGlow - minGlow) >= glowchange / 1.5) {
+        if ((maxGlow - minGlow) >= glowchange) {
             longFlickCount++;
             if (longFlickCount >= longFlickRate) {
                 status = "Faulty";
@@ -123,7 +123,7 @@ void loop() {
         }
 
         // Check for high-frequency flicker
-        if (abs(currentglow - prevglow) >= glowchange/1.5) {
+        if (abs(currentglow - prevglow) >= glowchange) {
             flick++;
             if (flick >= flickrate) {
                 status = "Faulty";
@@ -152,10 +152,10 @@ void loop() {
                     faultType = "Low Brightness";
                     Serial.println("low brightness");
                 }
-                else if(avgGlow < brightthresh && poweron >= powerthresh){
-                  status = "Stable";
-                  faultType = "None";
-                }
+            }
+            else if(avgGlow < brightthresh){
+              status = "Stable";
+              faultType = "None";
             }
             work = 0;
         }
