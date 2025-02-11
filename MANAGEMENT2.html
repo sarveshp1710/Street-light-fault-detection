@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Add Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
+    <meta charset="UTF-8">
+    <title>Chennai Street Light Management</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2ecc71;
+            --fault-color: #e74c3c;
+            --background-light: #f4f4f4;
+            --text-dark: #2c3e50;
+            --sidebar-bg: hsl(54, 91%, 44%);
+            --sidebar-shadow: rgba(0, 0, 0, 0.1);
+            --hover-bg: hwb(240 2% 98%);
+            --map-overlay-bg: rgba(255, 255, 255, 0.9);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            background-color: var(--background-light);
+            color: var(--text-dark);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            width: 350px;
+            background: url('https://cdn.create.vista.com/api/media/medium/461189522/stock-photo-abstract-colorful-polygonal-background?token=') no-repeat center center/cover;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            z-index: 1000;
+            cursor: move;
+            height: calc(90vh);  /* Fixed height instead of max-height */
+            color: white;
+            display: flex;       /* Add flex display */
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-content {
+            flex: 1;            /* Take remaining space */
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-bottom: 20px;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            background-color: var(--primary-color);
+            color: white;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .minimize-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 5px;
+            font-size: 1.2em;
+        }
+
+        .sidebar.minimized {
+            height: auto;
+        }
+
+        .sidebar.minimized .sidebar-content {
+            display: none;
+        }
+
+        .search-container {
+            padding: 15px;
+            background: url('https://cdn.create.vista.com/api/media/medium/461189522/stock-photo-abstract-colorful-polygonal-background?token=') no-repeat center center/cover;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+
+        .list-section {
+            padding: 10px;
+            overflow-y: visible; /* Allow content to scroll within sidebar-content */
+        }
+
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.2s;
+        }
+
+        .list-item:hover {
+            background-color: var(--hover-bg);
+            transform: translateX(5px);
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .status-normal { background-color: var(--secondary-color); }
+        .status-fault { 
+            background-color: var(--fault-color);
+            animation: blink 1s infinite;
+        }
+
+        .detail-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            background: url('https://cdn.create.vista.com/api/media/medium/461283876/stock-photo-colorful-geometric-background-mosaic-design?token=') no-repeat center center/cover;
+            padding: 20px;
+            border-radius: 8px;
+            max-height: 500px;
+            overflow-y: auto;
+            z-index: 2000;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            transform: none;  /* Remove the previous transform */
+        }
+
+        .detail-panel.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .detail-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-dark);
+            cursor: pointer;
+            font-size: 1.5em;
+            padding: 5px;
+            transition: color 0.3s;
+        }
+
+        .close-btn:hover {
+            color: var(--fault-color);
+        }
+
+        .light-detail {
+            border-left: 4px solid var(--secondary-color);
+            padding-left: 10px;
+            margin-top: 10px;
+        }
+
+        .light-detail p {
+            margin: 5px 0;
+        }
+
+        /* Custom Icon Styles */
+        .light-icon {
+            background-color: transparent;
+            border: none;
+            width: 40px !important;
+            height: 40px !important;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .light-icon i {
+            font-size: 40px;
+            display: inline-block;
+            filter: drop-shadow(0 0 5px rgba(0,0,0,0.4));
+            animation: blink 1s infinite;
+
+        }
+
+        .light-icon.normal i {
+            color: #2ecc71;
+            text-shadow: 0 0 15px #2ecc71;
+            animation: glow 2s infinite;
+        }
+
+        .light-icon.fault i {
+            background-color: var(--fault-color);
+            animation: blink 1s infinite;
+        }
+
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            25% { transform: scale(1.4); }
+            40% { transform: scale(1); }
+            60% { transform: scale(1.4); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes blink {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.5); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes faultBlink {
+            0% { transform: scale(1); opacity: 1; }
+            25% { transform: scale(1.4); opacity: 0.7; }
+            40% { transform: scale(1); opacity: 1; }
+            60% { transform: scale(1.4); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes glow {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        /* Remove or comment out the old pulse and shake animations */
+        /* @keyframes pulse {...} */
+        /* @keyframes shake {...} */
+
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: var(--background-light);
+            min-width: 200px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+        }
+
+        .dropdown-content p {
+            color: var(--text-dark);
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+        }
+
+        .dropdown:hover .dropdown-content {
+            display: block;
+        }
+
+        .top-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: var(--map-overlay-bg);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .top-panel p {
+            margin: 5px 0;
+            color: var(--text-dark);
+        }
+
+        .main-content {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0; /* Ensure the map is behind other elements */
+        }
+
+        /* Add custom scrollbar styling */
+        .sidebar-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb:hover {
+            background: #2980b9;
+        }
+
+        /* Add new styles for emergency button */
+        .emergency-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .emergency-btn:hover {
+            background-color: #c0392b;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar" id="draggableSidebar">
+        <div class="sidebar-header" id="sidebarHeader">
+            <h2>Street Light Management</h2>
+            <div class="sidebar-controls">
+                <button class="minimize-btn" id="minimizeBtn">−</button>
+                <div class="dropdown">
+                    <span>🌆</span>
+                    <div class="dropdown-content" id="dropdownContent">
+                        <!-- Content will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-content">
+            <div class="search-container">
+                <input type="text" placeholder="Search cities, streets..." class="search-input" id="searchInput">
+            </div>
+
+            <div id="cityList" class="list-section"></div>
+            <div id="streetList" class="list-section" style="display:none;">
+                <h3>Streets</h3>
+                <h4 id="cityStreetListHeading"></h4> <!-- Added subheading -->
+            </div>
+            <div id="lightList" class="list-section" style="display:none;"></div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div id="map"></div>
+        <div id="detailPanel" class="detail-panel"></div>
+        <div class="top-panel" id="topPanel">
+            <!-- Content will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/js/all.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const mapContainer = document.getElementById('map');
+            if (!mapContainer) {
+                console.error('Map container not found');
+                return;
+            }
+
+            const map = L.map('map').setView([13.0827, 80.2707], 10);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            const cityData = {
+                Chennai: {
+                    lat: 13.0827, 
+                    lng: 80.2707,
+                    streets: [
+                        {
+                            name: 'Marina Beach Road',
+                            lights: [
+                                { 
+                                    serialCode: 'CHEN-MAR-001',
+                                    id: 1, 
+                                    name: 'Marina Light 1', 
+                                    lat: 13.0396, 
+                                    lng: 80.2731, 
+                                    status: 'normal', 
+                                    details: { 
+                                        installDate: '2020-01-15', 
+                                        type: 'LED', 
+                                        wattage: 100, 
+                                        lastMaintenance: '2023-06-10' 
+                                    }
+                                },
+                                { 
+                                    serialCode: 'CHEN-MAR-002',
+                                    id: 2, 
+                                    name: 'Marina Light 2', 
+                                    lat: 13.0397, 
+                                    lng: 80.2732, 
+                                    status: 'fault',
+                                    details: { 
+                                        installDate: '2019-11-20', 
+                                        type: 'Sodium Vapor', 
+                                        wattage: 150, 
+                                        lastMaintenance: '2022-12-05' 
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            name: 'Mylapore Temple Street',
+                            lights: [
+                                { 
+                                    serialCode: 'CHEN-MYL-001',
+                                    id: 3, 
+                                    name: 'Mylapore Light 1', 
+                                    lat: 13.0339, 
+                                    lng: 80.2683, 
+                                    status: 'normal',
+                                    details: { 
+                                        installDate: '2021-03-22', 
+                                        type: 'LED', 
+                                        wattage: 80, 
+                                        lastMaintenance: '2023-08-15' 
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                Kanchipuram: {
+                    lat: 12.9719, 
+                    lng: 79.7951,
+                    streets: [
+                        {
+                            name: 'Temple Road',
+                            lights: [
+                                { 
+                                    serialCode: 'KANC-TEM-001',
+                                    id: 4, 
+                                    name: 'Kanchipuram Light 1', 
+                                    lat: 12.8375, 
+                                    lng: 79.7006, 
+                                    status: 'fault',
+                                    details: { 
+                                        installDate: '2018-09-10', 
+                                        type: 'Mercury Vapor', 
+                                        wattage: 200, 
+                                        lastMaintenance: '2022-05-20' 
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                Adyar: {
+                    lat: 13.0067, 
+                    lng: 80.2550,
+                    streets: [
+                        {
+                            name: 'LB Road',
+                            lights: [
+                                { 
+                                    serialCode: 'ADY-LB-001',
+                                    id: 5, 
+                                    name: 'Adyar Light 1', 
+                                    lat: 13.0080, 
+                                    lng: 80.2565, 
+                                    status: 'normal',
+                                    details: { 
+                                        installDate: '2022-02-10', 
+                                        type: 'LED', 
+                                        wattage: 120, 
+                                        lastMaintenance: '2024-01-05' 
+                                    }
+                                },
+                                { 
+                                    serialCode: 'ADY-LB-002',
+                                    id: 6, 
+
+                                    name: 'Adyar Light 2', 
+                                    lat: 13.0089, 
+                                    lng: 80.2599, 
+                                    status: 'fault',
+                                    details: { 
+                                        installDate: '2019-11-20', 
+                                        type: 'Sodium Vapor', 
+                                        wattage: 150, 
+                                        lastMaintenance: '2022-12-05' 
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                Koyambedu: {
+                    lat: 13.0692, 
+                    lng: 80.2100,
+                    streets: [
+                        {
+                            name: 'Market Road',
+                            lights: [
+                                { 
+                                    serialCode: 'KOY-MAR-001',
+                                    id: 7, 
+                                    name: 'Koyambedu Light 1', 
+                                    lat: 13.0705, 
+                                    lng: 80.2115, 
+                                    status: 'fault',
+                                    details: { 
+                                        installDate: '2021-07-15', 
+                                        type: 'Sodium Vapor', 
+                                        wattage: 150, 
+                                        lastMaintenance: '2023-11-20' 
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                Velachery: {
+                    lat: 12.9802, 
+                    lng: 80.2228,
+                    streets: [
+                        {
+                            name: 'Main Road',
+                            lights: [
+                                { 
+                                    serialCode: 'VEL-MAI-001',
+                                    id: 8, 
+                                    name: 'Velachery Light 1', 
+                                    lat: 12.9805, 
+                                    lng: 80.2235, 
+                                    status: 'normal',
+                                    details: { 
+                                        installDate: '2020-05-10', 
+                                        type: 'LED', 
+                                        wattage: 100, 
+                                        lastMaintenance: '2023-10-15' 
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            const cityList = document.getElementById('cityList');
+            const streetList = document.getElementById('streetList');
+            const lightList = document.getElementById('lightList');
+            const detailPanel = document.getElementById('detailPanel');
+            const searchInput = document.getElementById('searchInput');
+            let markers = [];
+
+            // Function to create custom icons
+            function createIcon(status) {
+                const color = status === 'normal' ? '#2ecc71' : '#ff3b3b';
+                return L.divIcon({
+                    className: `light-icon ${status}`,
+                    html: `<i class="fas fa-lightbulb" style="color: ${color}"></i>`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                });
+            }
+
+            // Populate cities in the sidebar
+            function populateCities() {
+                Object.keys(cityData).forEach(cityName => {
+                    const cityItem = document.createElement('div');
+                    cityItem.classList.add('list-item');
+                    cityItem.innerHTML = `
+                        <span>${cityName}</span>
+                        <span class="status-indicator" style="background-color: ${calculateCityStatus(cityName)}"></span>
+                    `;
+                    cityItem.addEventListener('click', () => selectCity(cityName));
+                    cityList.appendChild(cityItem);
+                });
+            }
+
+            // Calculate city status based on light conditions
+            function calculateCityStatus(cityName) {
+                const city = cityData[cityName];
+                const lights = city.streets.flatMap(street => street.lights);
+                const faultyLights = lights.filter(light => light.status === 'fault');
+                return faultyLights.length > 0 ? '#e74c3c' : '#2ecc71';
+            }
+
+            // Handle city selection
+            function selectCity(cityName) {
+                const city = cityData[cityName];
+                map.setView([city.lat, city.lng], 12);
+                
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+
+                streetList.innerHTML = '<h3>Streets</h3><h4 id="cityStreetListHeading">' + cityName + ' streetlist</h4>'; // Updated subheading
+                city.streets.forEach(street => {
+                    const streetItem = document.createElement('div');
+                    streetItem.classList.add('list-item');
+                    streetItem.innerHTML = `
+                        <span>${street.name}</span>
+                        <span class="status-indicator" style="background-color: ${calculateStreetStatus(street)}"></span>
+                    `;
+                    streetItem.addEventListener('click', () => selectStreet(street));
+                    streetList.appendChild(streetItem);
+
+                    street.lights.forEach(light => {
+                        const marker = L.marker([light.lat, light.lng], {
+                            icon: createIcon(light.status)
+                        })
+                        .addTo(map)
+                        .on('click', () => showLightDetails(light));
+                        markers.push(marker);
+                    });
+                });
+
+                streetList.style.display = 'block';
+                lightList.style.display = 'none';
+            }
+
+            // Calculate street status based on light conditions
+            function calculateStreetStatus(street) {
+                const faultyLights = street.lights.filter(light => light.status === 'fault');
+                return faultyLights.length > 0 ? '#e74c3c' : '#2ecc71';
+            }
+
+            // Handle street selection
+            function selectStreet(street) {
+                lightList.innerHTML = `<h3>${street.name} Lights</h3>`;
+                street.lights.forEach(light => {
+                    const lightItem = document.createElement('div');
+                    lightItem.classList.add('list-item', 'light-detail');
+                    lightItem.innerHTML = `
+                        <span>${light.name}</span>
+                        <span class="status-indicator status-${light.status}"></span>
+                    `;
+                    lightItem.addEventListener('click', () => showLightDetails(light));
+                    lightList.appendChild(lightItem);
+                });
+                lightList.style.display = 'block';
+            }
+
+            // Show light details in the bottom panel
+            function showLightDetails(light) {
+                map.setView([light.lat, light.lng], 16);
+
+                const statusColor = light.status === 'normal' ? '#2ecc71' : '#e74c3c'; // Green for normal, Red for fault
+
+                detailPanel.innerHTML = `
+                    <div class="detail-panel-header">
+                        <h3>${light.name} Details</h3>
+                        <button class="close-btn" onclick="closeDetailPanel()">&times;</button>
+                    </div>
+                    <div class="light-detail" style="border-left-color: ${statusColor}">
+                        <p><strong>Serial Code:</strong> ${light.serialCode}</p>
+                        <p><strong>Installation Date:</strong> ${light.details.installDate}</p>
+                        <p><strong>Light Type:</strong> ${light.details.type}</p>
+                        <p><strong>Wattage:</strong> ${light.details.wattage}W</p>
+                        <p><strong>Last Maintenance:</strong> ${light.details.lastMaintenance}</p>
+                        <button class="emergency-btn" onclick="openEmergencyDetails()">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Details
+                        </button>
+                    </div>
+                `;
+                detailPanel.classList.add('active');
+            }
+
+            window.openEmergencyDetails = function() {
+                window.open('emergency.html', '_blank');
+            };
+
+            window.closeDetailPanel = function() {
+                detailPanel.classList.remove('active');
+            };
+
+            // Handle search input
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const cityItems = cityList.getElementsByClassName('list-item');
+                
+                Array.from(cityItems).forEach(item => {
+                    const cityName = item.textContent.toLowerCase();
+                    item.style.display = cityName.includes(searchTerm) ? 'flex' : 'none';
+                });
+            });
+
+            // Function to populate dropdown with statistics
+            function populateDropdown() {
+                const dropdownContent = document.getElementById('dropdownContent');
+                const stats = calculateStatistics();
+
+                dropdownContent.innerHTML = `
+                    <p>Total Cities: ${stats.cities}</p>
+                    <p>Total Streets: ${stats.streets}</p>
+                    <p>Total Lights: ${stats.total}</p>
+                    <p>Working Lights: ${stats.working}</p>
+                    <p>Faulty Lights: ${stats.faulty}</p>
+                `;
+            }
+
+            // Function to populate top panel with statistics
+            function populateTopPanel() {
+                const topPanel = document.getElementById('topPanel');
+                const stats = calculateStatistics();
+
+                topPanel.innerHTML = `
+                    <p>Total Lights: ${stats.total}</p>
+                    <p>Working Lights: ${stats.working}</p>
+                    <p>Faulty Lights: ${stats.faulty}</p>
+                `;
+            }
+
+            // Helper function to calculate statistics
+            function calculateStatistics() {
+                const stats = {
+                    cities: 0,
+                    streets: 0,
+                    total: 0,
+                    working: 0,
+                    faulty: 0
+                };
+
+                stats.cities = Object.keys(cityData).length;
+                
+                Object.values(cityData).forEach(city => {
+                    stats.streets += city.streets.length;
+                    city.streets.forEach(street => {
+                        stats.total += street.lights.length;
+                        street.lights.forEach(light => {
+                            if (light.status === 'normal') {
+                                stats.working++;
+                            } else {
+                                stats.faulty++;
+                            }
+                        });
+                    });
+                });
+
+                return stats;
+            }
+
+            // Add dragging functionality
+            const sidebar = document.getElementById('draggableSidebar');
+            const header = document.getElementById('sidebarHeader');
+            const minimizeBtn = document.getElementById('minimizeBtn');
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            header.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                initialX = e.clientX - xOffset;
+                initialY = e.clientY - yOffset;
+
+                if (e.target === header) {
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    xOffset = currentX;
+                    yOffset = currentY;
+
+                    setTranslate(currentX, currentY, sidebar);
+                }
+            }
+
+            function setTranslate(xPos, yPos, el) {
+                el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+            }
+
+            function dragEnd(e) {
+                initialX = currentX;
+                initialY = currentY;
+                isDragging = false;
+            }
+
+            // Add minimize/maximize functionality
+            minimizeBtn.addEventListener('click', function() {
+                sidebar.classList.toggle('minimized');
+                this.textContent = sidebar.classList.contains('minimized') ? '+' : '−';
+            });
+
+            // Initialize the app
+            populateCities();
+            populateDropdown();
+            populateTopPanel();
+        });
+    </script>
+</body>
+</html>
