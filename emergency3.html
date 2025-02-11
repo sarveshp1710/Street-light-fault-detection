@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Street Light Monitoring</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
+                        url('https://images.unsplash.com/photo-1542159919831-40fb0656b45a?auto=format&fit=crop&q=80') no-repeat center center fixed;
+            background-size: cover;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            min-height: 100vh;
+        }
+        h1 {
+            color: #ffffff;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 30px;
+        }
+        .light-card {
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+        .stable { background-color: #2ecc71; }
+        .faulty { background-color: #e74c3c; }
+        .power-off { background-color: #f1c40f; }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(221, 221, 221, 0.5);
+        }
+        th {
+            background-color: rgba(52, 152, 219, 0.9);
+            color: white;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: rgba(245, 245, 245, 0.9);
+            transform: scale(1.01);
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        tbody tr {
+            transition: all 0.3s ease;
+        }
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Smart Street Light Monitoring</h1>
+        <table id="lights-table">
+            <thead>
+                <tr>
+                    <th>Serial Code</th>
+                    <th>Status</th>
+                    <th>Fault Type</th>
+                    <th>Brightness</th>
+                    <th>Power</th>
+                    <th>Last Update</th>
+                </tr>
+            </thead>
+            <tbody id="lights-body">
+                <!-- Data will be inserted here -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyB3Wg6wn6dsAnTuHmdLvEsNhrPx2c8dfGw",
+            authDomain: "smart-street-light-c846b.firebaseapp.com",
+            databaseURL: "https://smart-street-light-c846b-default-rtdb.firebaseio.com",
+            projectId: "smart-street-light-c846b",
+            storageBucket: "smart-street-light-c846b.appspot.com",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Reference to the streetLights node
+        const lightsRef = database.ref('streetLights');
+
+        function updateLight(data) {
+            const tbody = document.getElementById('lights-body');
+            const rowId = `light-${data.serialCode}`;
+            let row = document.getElementById(rowId);
+
+            if (!row) {
+                row = document.createElement('tr');
+                row.id = rowId;
+                tbody.appendChild(row);
+            }
+
+            const statusClass = data.status === 'Faulty' ? 'faulty' : 
+                              data.status === 'Power Off' ? 'power-off' : 'stable';
+
+            const lastUpdate = new Date(data.updateCount).toLocaleTimeString();
+
+            row.innerHTML = `
+                <td>${data.serialCode}</td>
+                <td>
+                    <span class="status-indicator ${statusClass}"></span>
+                    ${data.status}
+                </td>
+                <td>${data.faultType}</td>
+                <td>${Math.round(data.brightness/40.95)}%</td>
+                <td>${data.power} mV</td>
+                <td>${lastUpdate}</td>
+            `;
+        }
+
+        // Listen for real-time updates
+        lightsRef.on('child_added', (snapshot) => {
+            updateLight(snapshot.val());
+        });
+
+        lightsRef.on('child_changed', (snapshot) => {
+            updateLight(snapshot.val());
+        });
+
+        // Handle errors
+        lightsRef.on('value', (snapshot) => {}, (error) => {
+            console.error('Firebase error:', error);
+        });
+    </script>
+</body>
+</html>
